@@ -4276,11 +4276,42 @@ func diffDynamoDbReplicas(oldReplica, newReplica []interface{}) (ops []*dynamodb
 		if _, exists := oldReplicas[newName]; !exists {
 			m := data.(map[string]interface{})
 			regionName := m["region_name"].(string)
+			createOp := &dynamodb.CreateReplicationGroupMemberAction{
+				RegionName: aws.String(regionName),
+			}
+
+			if val, ok := m["kms_master_key_id"]; val != "" && ok {
+				createOp.KMSMasterKeyId = aws.String(val.(string))
+			}
+
+			if val, ok := m["provision_capacity_override"]; ok {
+				provisionedThroughputList := val.([]interface{})
+				provisionedThroughput := provisionedThroughputList[0].(map[string]interface{})
+				createOp.ProvisionedThroughputOverride = &dynamodb.ProvisionedThroughputOverride{
+					ReadCapacityUnits: aws.Int64(int64(provisionedThroughput["read_capacity"].(int))),
+				}
+			}
+
+			if val, ok := m["global_secondary_index"].(map[string]interface{}); ok {
+				gsiList := val["global_secondary_index"].([]interface{})
+				gsiUpdates := make([]*dynamodb.ReplicaGlobalSecondaryIndex, len(gsiList))
+				for _, gsi := range gsiList {
+					curGsi := gsi.(map[string]interface{})
+					provisionedThroughputList := curGsi["provision_capacity_override"].([]interface{})
+					provisionedThroughput := provisionedThroughputList[0].(map[string]interface{})
+					gsiReplicaUpdate := &dynamodb.ReplicaGlobalSecondaryIndex{
+						IndexName: aws.String(curGsi["name"].(string)),
+						ProvisionedThroughputOverride: &dynamodb.ProvisionedThroughputOverride{
+							ReadCapacityUnits: aws.Int64(int64(provisionedThroughput["read_capacity"].(int))),
+						},
+					}
+					gsiUpdates = append(gsiUpdates, gsiReplicaUpdate)
+				}
+				createOp.GlobalSecondaryIndexes = gsiUpdates
+			}
 
 			ops = append(ops, &dynamodb.ReplicationGroupUpdate{
-				Create: &dynamodb.CreateReplicationGroupMemberAction{
-					RegionName: aws.String(regionName),
-				},
+				Create: createOp,
 			})
 		}
 	}
@@ -4289,10 +4320,47 @@ func diffDynamoDbReplicas(oldReplica, newReplica []interface{}) (ops []*dynamodb
 		oldMap := data.(map[string]interface{})
 		oldName := oldMap["region_name"].(string)
 
-		_, exists := newReplicas[oldName]
+		newData, exists := newReplicas[oldName]
 		if exists {
-			// newMap := newData.(map[string]interface{})
-			// regionName := newMap["region"].(string)
+			newMap := newData.(map[string]interface{})
+			regionName := newMap["region_name"].(string)
+			updateOp := &dynamodb.UpdateReplicationGroupMemberAction{
+				RegionName: aws.String(regionName),
+			}
+
+			if val, ok := newMap["kms_master_key_id"]; val != "" && ok {
+				updateOp.KMSMasterKeyId = aws.String(val.(string))
+			}
+
+			if val, ok := newMap["provision_capacity_override"]; ok {
+				provisionedThroughputList := val.([]interface{})
+				provisionedThroughput := provisionedThroughputList[0].(map[string]interface{})
+				updateOp.ProvisionedThroughputOverride = &dynamodb.ProvisionedThroughputOverride{
+					ReadCapacityUnits: aws.Int64(int64(provisionedThroughput["read_capacity"].(int))),
+				}
+			}
+
+			if val, ok := newMap["global_secondary_index"].(map[string]interface{}); ok {
+				gsiList := val["global_secondary_index"].([]interface{})
+				gsiUpdates := make([]*dynamodb.ReplicaGlobalSecondaryIndex, len(gsiList))
+				for _, gsi := range gsiList {
+					curGsi := gsi.(map[string]interface{})
+					provisionedThroughputList := curGsi["provision_capacity_override"].([]interface{})
+					provisionedThroughput := provisionedThroughputList[0].(map[string]interface{})
+					gsiReplicaUpdate := &dynamodb.ReplicaGlobalSecondaryIndex{
+						IndexName: aws.String(curGsi["name"].(string)),
+						ProvisionedThroughputOverride: &dynamodb.ProvisionedThroughputOverride{
+							ReadCapacityUnits: aws.Int64(int64(provisionedThroughput["read_capacity"].(int))),
+						},
+					}
+					gsiUpdates = append(gsiUpdates, gsiReplicaUpdate)
+				}
+				updateOp.GlobalSecondaryIndexes = gsiUpdates
+			}
+
+			ops = append(ops, &dynamodb.ReplicationGroupUpdate{
+				Update: updateOp,
+			})
 		} else {
 			regionName := oldName
 			ops = append(ops, &dynamodb.ReplicationGroupUpdate{
@@ -4475,7 +4543,14 @@ func flattenAwsDynamoDbTableResource(d *schema.ResourceData, table *dynamodb.Tab
 	replicaList := make([]map[string]interface{}, 0, len(table.Replicas))
 	for _, replicaObject := range table.Replicas {
 		replica := map[string]interface{}{
-			"region_name": aws.StringValue(replicaObject.RegionName),
+			"region_name":       aws.StringValue(replicaObject.RegionName),
+			"kms_master_key_id": aws.StringValue(replicaObject.KMSMasterKeyId),
+		}
+
+		if replicaObject.ProvisionedThroughputOverride != nil {
+			replica["provision_capacity_override"] = map[string]interface{}{
+				"read_capacity": replicaObject.ProvisionedThroughputOverride.ReadCapacityUnits,
+			}
 		}
 
 		replicaList = append(replicaList, replica)

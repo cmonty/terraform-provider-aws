@@ -293,8 +293,9 @@ func resourceAwsDynamoDbTable() *schema.Resource {
 							Optional: true,
 						},
 						"provision_capacity_override": {
-							Type:     schema.TypeMap,
+							Type:     schema.TypeList,
 							Optional: true,
+							MaxItems: 1,
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
 									"read_capacity": {
@@ -314,8 +315,9 @@ func resourceAwsDynamoDbTable() *schema.Resource {
 										Required: true,
 									},
 									"provisioned_capacity_override": {
-										Type:     schema.TypeMap,
+										Type:     schema.TypeList,
 										Required: true,
+										MaxItems: 1,
 										Elem: &schema.Resource{
 											Schema: map[string]*schema.Schema{
 												"read_capacity": {

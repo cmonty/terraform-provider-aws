@@ -1425,6 +1425,45 @@ func TestAccAWSDynamoDbTable2019_basic(t *testing.T) {
 	})
 }
 
+func TestAccAWSDynamoDbTable2019_capacityOverride(t *testing.T) {
+	var conf dynamodb.DescribeTableOutput
+	resourceName := "aws_dynamodb_table.test"
+	tableName := acctest.RandomWithPrefix("TerraformTestTable-")
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckAWSDynamoDbTableDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccAWSDynamoDbReplicaUpdates(tableName),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckInitialAWSDynamoDbTableExists(resourceName, &conf),
+					resource.TestCheckResourceAttr(resourceName, "name", tableName),
+					resource.TestCheckResourceAttr(resourceName, "hash_key", "TestTableHashKey"),
+					resource.TestCheckResourceAttr(resourceName, "attribute.2990477658.name", "TestTableHashKey"),
+					resource.TestCheckResourceAttr(resourceName, "attribute.2990477658.type", "S"),
+					resource.TestCheckResourceAttr(resourceName, "replica.#", "0"),
+				),
+			},
+			{
+				Config: testAccAWSDynamoDbReplica_capacityOverride(tableName),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckInitialAWSDynamoDbTableExists(resourceName, &conf),
+					resource.TestCheckResourceAttr(resourceName, "replica.#", "1"),
+					resource.TestCheckResourceAttr(resourceName, "replica.0.region_name", "us-west-1"),
+					resource.TestCheckResourceAttr(resourceName, "replica.0.provision_capacity_override.#", "1"),
+				),
+			},
+			{
+				ResourceName:      resourceName,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
 func testAccAWSDynamoDbReplicaUpdates(rName string) string {
 	return fmt.Sprintf(`
 resource "aws_dynamodb_table" "test" {
@@ -1433,6 +1472,27 @@ resource "aws_dynamodb_table" "test" {
 	billing_mode = "PAY_PER_REQUEST"
 	stream_enabled = true
 	stream_view_type = "NEW_AND_OLD_IMAGES"
+	read_capacity = 1
+	write_capacity = 1
+
+  attribute {
+    name = "TestTableHashKey"
+    type = "S"
+  }
+}
+`, rName)
+}
+
+func testAccAWSDynamoDbReplica_capacityOverride(rName string) string {
+	return fmt.Sprintf(`
+resource "aws_dynamodb_table" "test" {
+  name         = "%s"
+  hash_key     = "TestTableHashKey"
+	billing_mode = "PAY_PER_REQUEST"
+	stream_enabled = true
+	stream_view_type = "NEW_AND_OLD_IMAGES"
+	read_capacity = 1
+	write_capacity = 1
 
   attribute {
     name = "TestTableHashKey"
@@ -1441,6 +1501,9 @@ resource "aws_dynamodb_table" "test" {
 
 	replica {
 	  region_name = "us-west-1"
+		provision_capacity_override {
+		  read_capacity  = 2
+		}
 	}
 }
 `, rName)
